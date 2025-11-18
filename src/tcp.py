@@ -95,7 +95,13 @@ class TCP(Protocol):
             logger.error(f"파일 전송 중 오류 발생: {e}")
             return False
 
-    def start_server(self, host: str, port: int, target_dir: str = "received"):
+    def start_server(
+        self,
+        host: str,
+        port: int,
+        target_dir: str = "received",
+        log_filename: str = None,
+    ):
         """
         서버를 시작하는 함수입니다. 클라이언트로부터 파일을 받아서 저장합니다.
         파일 수신과 파일 쓰기를 분리하여 처리합니다.
@@ -104,8 +110,12 @@ class TCP(Protocol):
             host (str): 서버의 주소입니다.
             port (int): 서버의 포트입니다.
             target_dir (str): 파일을 저장할 디렉토리입니다.
+            log_filename (str): 로그 파일 이름입니다. None이면 자동 생성됩니다.
         """
-        logger.get_logger().start_file_logging()
+        if log_filename:
+            logger.get_logger().start_file_logging(log_filename)
+        else:
+            logger.get_logger().start_file_logging()
         logger.info(f"TCP로 서버 시작 - {host}:{port}")
 
         # 저장 디렉토리 확인 및 생성

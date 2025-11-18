@@ -169,7 +169,13 @@ class UDP(Protocol):
         finally:
             sock.close()
 
-    def start_server(self, host: str, port: int, target_dir: str = "received"):
+    def start_server(
+        self,
+        host: str,
+        port: int,
+        target_dir: str = "received",
+        log_filename: str = None,
+    ):
         """
         UDP 서버를 시작합니다. 패킷 손실을 감지하고 통계를 출력합니다.
 
@@ -177,8 +183,12 @@ class UDP(Protocol):
             host (str): 서버의 주소입니다.
             port (int): 서버의 포트입니다.
             target_dir (str): 파일을 저장할 디렉토리입니다.
+            log_filename (str): 로그 파일 이름입니다. None이면 자동 생성됩니다.
         """
-        logger.get_logger().start_file_logging()
+        if log_filename:
+            logger.get_logger().start_file_logging(log_filename)
+        else:
+            logger.get_logger().start_file_logging()
         logger.info(f"UDP 서버 시작 - {host}:{port}")
         logger.info(f"파일 저장 디렉토리: {target_dir}")
 

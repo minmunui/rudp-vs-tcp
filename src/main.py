@@ -142,4 +142,4 @@ if __name__ == "__main__":
         )
 
     else:
-        protocol.start_server(host=arg_host, port=arg_port)
+        protocol.start_server(host=arg_host, port=arg_port, log_filename=arg_logger)

@@ -225,12 +225,21 @@ class RUDP(Protocol):
             client_socket.close()
             return losses
 
-    def start_server(self, host: str, port: int, target_dir: str = "received"):
+    def start_server(
+        self,
+        host: str,
+        port: int,
+        target_dir: str = "received",
+        log_filename: str = None,
+    ):
         # 서버 소켓 생성
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         server_socket.bind((host, port))
 
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFFER_SIZE)
+
+        if log_filename:
+            logger.get_logger().start_file_logging(log_filename)
 
         logger.info(f"서버가 {host}:{port}에서 시작되었습니다...")
         logger.info(f"파일을 받을 디렉터리: {target_dir}")

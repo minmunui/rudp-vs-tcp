@@ -251,7 +251,13 @@ class QUIC(Protocol):
             logger.error(f"파일 전송 중 오류 발생: {e}")
             return False
 
-    def start_server(self, host: str, port: int, target_dir: str = "received"):
+    def start_server(
+        self,
+        host: str,
+        port: int,
+        target_dir: str = "received",
+        log_filename: str = None,
+    ):
         """
         QUIC 서버를 시작합니다.
 
@@ -259,12 +265,20 @@ class QUIC(Protocol):
             host: 서버 바인딩 주소
             port: 서버 포트
             target_dir: 파일 저장 디렉토리
+            log_filename: 로그 파일 이름. None이면 자동 생성됩니다.
         """
-        return asyncio.run(self._start_server_async(host, port, target_dir))
+        return asyncio.run(
+            self._start_server_async(host, port, target_dir, log_filename)
+        )
 
-    async def _start_server_async(self, host: str, port: int, target_dir: str):
+    async def _start_server_async(
+        self, host: str, port: int, target_dir: str, log_filename: str = None
+    ):
         """비동기 서버 시작"""
-        logger.get_logger().start_file_logging()
+        if log_filename:
+            logger.get_logger().start_file_logging(log_filename)
+        else:
+            logger.get_logger().start_file_logging()
         logger.info(f"QUIC 서버 시작 - {host}:{port}")
         logger.info(f"파일 저장 디렉토리: {target_dir}")
 
