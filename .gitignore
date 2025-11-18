@@ -287,4 +287,5 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
-# End of https://www.toptal.com/developers/gitignore/api/pycharm+all,python,windows
+# End of https://www.toptal.com/developers/gitignore/api/pycharm+all,python,windowstest_results_*.json
+test.sh

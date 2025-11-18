@@ -24,10 +24,11 @@ import argparse
 class PerformanceTest:
     """프로토콜 성능 테스트"""
 
-    def __init__(self, test_file: str, target: str = "localhost", iterations: int = 10):
+    def __init__(self, test_file: str, target: str = "localhost", iterations: int = 10, interval: float = 0.0):
         self.test_file = test_file
         self.target = target
         self.iterations = iterations
+        self.interval = interval
         self.results = {}
 
         # 프로토콜별 포트 설정
@@ -81,6 +82,8 @@ class PerformanceTest:
             str(port),
             "--buffer_size",
             str(buffer_size),
+            "--interval",
+            str(self.interval),
         ]
 
         try:
@@ -121,7 +124,7 @@ class PerformanceTest:
     def test_protocol(self, protocol: str, buffer_size: int = 1) -> Dict:
         """특정 프로토콜에 대해 여러 번 테스트"""
         print(f"\n{'='*60}")
-        print(f"테스트 시작: {protocol.upper()} (버퍼 크기: {buffer_size})")
+        print(f"테스트 시작: {protocol.upper()} (버퍼 크기: {buffer_size}, interval: {self.interval})")
         print(f"{'='*60}")
 
         results = []
@@ -210,6 +213,7 @@ class PerformanceTest:
         print(f"파일 크기: {os.path.getsize(self.test_file):,} bytes")
         print(f"대상 서버: {self.target}")
         print(f"반복 횟수: {self.iterations}")
+        print(f"전송 간격: {self.interval}초")
         print(f"테스트 프로토콜: {', '.join(p.upper() for p in protocols)}")
         print(f"버퍼 크기: {buffer_sizes}")
 
@@ -298,6 +302,7 @@ class PerformanceTest:
             "file_size": os.path.getsize(self.test_file),
             "target": self.target,
             "iterations": self.iterations,
+            "interval": self.interval,
             "results": results,
         }
 
@@ -359,6 +364,9 @@ def main():
   
   # 버퍼 크기 테스트
   python test_performance.py --mode client --file image.JPG --buffer-sizes 1 2 4
+  
+  # interval 설정 (0.001초 간격)
+  python test_performance.py --mode client --file image.JPG --interval 0.001
         """,
     )
 
@@ -400,6 +408,12 @@ def main():
         default=[1],
         help="클라이언트 모드: 테스트할 버퍼 크기 (기본: 1)",
     )
+    parser.add_argument(
+        "--interval",
+        type=float,
+        default=0.0,
+        help="클라이언트 모드: 패킷 전송 간격(초) (기본: 0.0 - 최대 속도)",
+    )
     parser.add_argument("--port", type=int, help="서버 모드: 포트 번호")
 
     args = parser.parse_args()
@@ -417,7 +431,7 @@ def main():
             print(f"오류: 파일을 찾을 수 없습니다: {args.file}")
             sys.exit(1)
 
-        tester = PerformanceTest(args.file, args.target, args.iterations)
+        tester = PerformanceTest(args.file, args.target, args.iterations, args.interval)
         tester.run_all_tests(args.protocols, args.buffer_sizes)
 
 
