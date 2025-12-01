@@ -7,6 +7,7 @@ from rudp import RUDP
 import logger
 from tcp import TCP
 from udp import UDP
+from midtp import MIDTP
 
 try:
     from quic import QUIC
@@ -107,8 +108,13 @@ if __name__ == "__main__":
         logger.get_logger().start_file_logging(arg_logger)
 
     if arg_protocol == "rudp":
-        buffer_size = 1460 + (arg_buffer_size - 1) * RUDP.MSS
-        protocol = RUDP()
+        segment_size = 1460 + (arg_buffer_size - 1) * RUDP.MSS
+        buffer_size = segment_size
+        protocol = RUDP(segment_size=segment_size)
+    elif arg_protocol == "midtp":
+        segment_size = 1460 + (arg_buffer_size - 1) * MIDTP.MSS
+        buffer_size = segment_size
+        protocol = MIDTP(segment_size=segment_size)
     elif arg_protocol == "tcp":
         buffer_size = arg_buffer_size * TCP.MSS
         protocol = TCP()
@@ -126,20 +132,38 @@ if __name__ == "__main__":
         protocol = QUIC()
     else:
         raise ValueError(
-            "Invalid protocol. Please choose 'rudp', 'tcp', 'udp', or 'quic'."
+            "Invalid protocol. Please choose 'rudp', 'midtp', 'tcp', 'udp', or 'quic'."
         )
 
     if arg_is_developer:
         program(arg_file_name, host=arg_host, port=arg_port)
 
     if arg_is_client:
-        protocol.send_file(
-            arg_file_name,
-            host=arg_host,
-            port=arg_port,
-            buffer_size=buffer_size,
-            interval=arg_interval,
-        )
+        if arg_protocol == "rudp" or arg_protocol == "midtp":
+            protocol.send_file(
+                arg_file_name,
+                host=arg_host,
+                port=arg_port,
+                buffer_size=buffer_size,
+                interval=arg_interval,
+                segment_size=segment_size,
+            )
+        else:
+            protocol.send_file(
+                arg_file_name,
+                host=arg_host,
+                port=arg_port,
+                buffer_size=buffer_size,
+                interval=arg_interval,
+            )
 
     else:
-        protocol.start_server(host=arg_host, port=arg_port, log_filename=arg_logger)
+        if arg_protocol == "rudp" or arg_protocol == "midtp":
+            protocol.start_server(
+                host=arg_host,
+                port=arg_port,
+                log_filename=arg_logger,
+                segment_size=segment_size,
+            )
+        else:
+            protocol.start_server(host=arg_host, port=arg_port, log_filename=arg_logger)
