@@ -24,7 +24,13 @@ import argparse
 class PerformanceTest:
     """프로토콜 성능 테스트"""
 
-    def __init__(self, test_file: str, target: str = "localhost", iterations: int = 10, interval: float = 0.0):
+    def __init__(
+        self,
+        test_file: str,
+        target: str = "localhost",
+        iterations: int = 10,
+        interval: float = 0.0,
+    ):
         self.test_file = test_file
         self.target = target
         self.iterations = iterations
@@ -32,7 +38,13 @@ class PerformanceTest:
         self.results = {}
 
         # 프로토콜별 포트 설정
-        self.protocols = {"tcp": 10000, "udp": 9998, "rudp": 9999, "quic": 4433}
+        self.protocols = {
+            "tcp": 10000,
+            "udp": 9998,
+            "rudp": 9999,
+            "midtp": 9997,
+            "quic": 4433,
+        }
 
     def extract_speed(self, output: str) -> Optional[float]:
         """로그에서 전송 속도 추출 (MB/s)"""
@@ -124,7 +136,9 @@ class PerformanceTest:
     def test_protocol(self, protocol: str, buffer_size: int = 1) -> Dict:
         """특정 프로토콜에 대해 여러 번 테스트"""
         print(f"\n{'='*60}")
-        print(f"테스트 시작: {protocol.upper()} (버퍼 크기: {buffer_size}, interval: {self.interval})")
+        print(
+            f"테스트 시작: {protocol.upper()} (버퍼 크기: {buffer_size}, interval: {self.interval})"
+        )
         print(f"{'='*60}")
 
         results = []
@@ -294,36 +308,90 @@ class PerformanceTest:
     def save_results(self, results: List[Dict]):
         """결과를 JSON 파일로 저장"""
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"test_results_{timestamp}.json"
 
+        # 클라이언트 결과 디렉터리 생성
+        results_dir = Path("experiment_results/client")
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = results_dir / f"client_results_{timestamp}.json"
+
+        # 실험 파라미터 및 결과 저장
         output = {
-            "timestamp": timestamp,
-            "test_file": self.test_file,
-            "file_size": os.path.getsize(self.test_file),
-            "target": self.target,
-            "iterations": self.iterations,
-            "interval": self.interval,
+            "experiment_info": {
+                "timestamp": timestamp,
+                "role": "client",
+                "test_date": time.strftime("%Y-%m-%d %H:%M:%S"),
+            },
+            "test_parameters": {
+                "test_file": self.test_file,
+                "file_size_bytes": os.path.getsize(self.test_file),
+                "file_size_mb": round(os.path.getsize(self.test_file) / 1024 / 1024, 2),
+                "target_server": self.target,
+                "iterations": self.iterations,
+                "interval_seconds": self.interval,
+            },
+            "protocols_tested": [r["protocol"] for r in results],
+            "buffer_sizes_tested": list(set(r["buffer_size"] for r in results)),
             "results": results,
         }
 
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(output, f, indent=2, ensure_ascii=False)
 
-        print(f"\n결과 저장: {filename}")
+        print(f"\n✓ 클라이언트 결과 저장: {filename}")
+
+        # CSV 형식으로도 저장 (분석 용이)
+        csv_filename = results_dir / f"client_results_{timestamp}.csv"
+        self._save_results_csv(results, csv_filename)
+        print(f"✓ CSV 결과 저장: {csv_filename}")
+
+    def _save_results_csv(self, results: List[Dict], filename: Path):
+        """결과를 CSV 파일로 저장"""
+        with open(filename, "w", encoding="utf-8") as f:
+            # 헤더
+            f.write(
+                "Protocol,BufferSize,Iterations,SuccessCount,SuccessRate(%),"
+                "AvgSpeed(MB/s),MinSpeed(MB/s),MaxSpeed(MB/s),StdDev,"
+                "AvgPacketLoss(%),MinPacketLoss(%),MaxPacketLoss(%)\n"
+            )
+
+            # 데이터
+            for r in results:
+                f.write(
+                    f"{r['protocol']},{r['buffer_size']},{r['iterations']},"
+                    f"{r['success_count']},{r['success_rate']:.2f},"
+                    f"{r.get('avg_speed', 0):.2f},{r.get('min_speed', 0):.2f},"
+                    f"{r.get('max_speed', 0):.2f},{r.get('std_dev', 0):.2f},"
+                    f"{r.get('avg_packet_loss', 0):.2f},"
+                    f"{r.get('min_packet_loss', 0):.2f},"
+                    f"{r.get('max_packet_loss', 0):.2f}\n"
+                )
 
 
-def start_server(protocol: str, port: Optional[int] = None):
+def start_server(protocol: str, port: Optional[int] = None, save_logs: bool = True):
     """서버 시작"""
-    protocols = {"tcp": 10000, "udp": 9998, "rudp": 9999, "quic": 4433}
+    protocols = {"tcp": 10000, "udp": 9998, "rudp": 9999, "midtp": 9997, "quic": 4433}
 
     if port is None:
         port = protocols.get(protocol, 9999)
+
+    # 서버 로그 디렉터리 생성
+    if save_logs:
+        logs_dir = Path("experiment_results/server")
+        logs_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        log_filename = logs_dir / f"server_{protocol}_{timestamp}.log"
+    else:
+        log_filename = None
 
     print(f"{'='*60}")
     print(f"{protocol.upper()} 서버 시작")
     print(f"{'='*60}")
     print(f"프로토콜: {protocol}")
     print(f"포트: {port}")
+    if log_filename:
+        print(f"로그 파일: {log_filename}")
     print(f"\n서버 실행 중... (Ctrl+C로 종료)")
     print(f"{'='*60}\n")
 
@@ -338,10 +406,16 @@ def start_server(protocol: str, port: Optional[int] = None):
         str(port),
     ]
 
+    # 로그 파일 옵션 추가
+    if log_filename:
+        cmd.extend(["--log", str(log_filename)])
+
     try:
         subprocess.run(cmd)
     except KeyboardInterrupt:
         print("\n\n서버 종료")
+        if log_filename:
+            print(f"✓ 서버 로그 저장됨: {log_filename}")
 
 
 def main():
@@ -379,7 +453,7 @@ def main():
     parser.add_argument(
         "--protocol",
         type=str,
-        choices=["tcp", "udp", "rudp", "quic"],
+        choices=["tcp", "udp", "rudp", "midtp", "quic"],
         help="서버 모드: 실행할 프로토콜",
     )
     parser.add_argument("--file", type=str, help="클라이언트 모드: 전송할 파일")
@@ -398,7 +472,7 @@ def main():
     parser.add_argument(
         "--protocols",
         nargs="+",
-        choices=["tcp", "udp", "rudp", "quic"],
+        choices=["tcp", "udp", "rudp", "midtp", "quic"],
         help="클라이언트 모드: 테스트할 프로토콜 (기본: 전체)",
     )
     parser.add_argument(
@@ -415,13 +489,18 @@ def main():
         help="클라이언트 모드: 패킷 전송 간격(초) (기본: 0.0 - 최대 속도)",
     )
     parser.add_argument("--port", type=int, help="서버 모드: 포트 번호")
+    parser.add_argument(
+        "--no-logs",
+        action="store_true",
+        help="서버 모드: 로그 파일 저장 안 함",
+    )
 
     args = parser.parse_args()
 
     if args.mode == "server":
         if not args.protocol:
             parser.error("서버 모드에서는 --protocol 옵션이 필요합니다")
-        start_server(args.protocol, args.port)
+        start_server(args.protocol, args.port, save_logs=not args.no_logs)
 
     elif args.mode == "client":
         if not args.file:
