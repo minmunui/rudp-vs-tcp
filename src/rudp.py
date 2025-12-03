@@ -123,7 +123,9 @@ class RUDP(Protocol):
 
             # 파일 정보 전송 (파일명 + 총 청크 수)
             file_info = struct.pack('!II256s', buffer_size, total_chunks, filename.encode()[:256])
-            client_socket.sendto(file_info[:512], server_address)
+            logger.info(f"파일 정보 전송: buffer_size={buffer_size}, total_chunks={total_chunks}, 크기={len(file_info)} bytes")
+            sent_bytes = client_socket.sendto(file_info[:512], server_address)
+            logger.info(f"파일 정보 전송 완료: {sent_bytes} bytes sent to {server_address}")
 
             # 청크를 보관하기 위한 dictionary
             packet_dict = {}
@@ -167,7 +169,8 @@ class RUDP(Protocol):
 
         finally:
             client_socket.close()
-            return losses
+        
+        return losses
 
     def start_server(self, host: str, port: int, target_dir: str = "received"):
         # 서버 소켓 생성
@@ -184,8 +187,10 @@ class RUDP(Protocol):
                 # flush_receive_buffer(server_socket)
 
                 # 파일 정보는 항상 고정된 크기로 받기
+                logger.info("파일 정보 대기 중...")
                 try:
                     data, client_address = server_socket.recvfrom(512)  # 초기 정보는 작은 크기로 받음
+                    logger.info(f"패킷 수신: {len(data)} bytes from {client_address}")
                 except KeyboardInterrupt:
                     raise
                 except OSError as e:
@@ -257,8 +262,7 @@ class RUDP(Protocol):
                         break
                     except KeyboardInterrupt:
                         logger.info("서버가 KeyboardInterrupt로 종료됩니다")
-                        server_socket.close()
-                        return
+                        raise
 
                 if not is_error:
                     transfer_end_time = time.time()
