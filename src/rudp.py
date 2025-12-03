@@ -13,6 +13,7 @@ import logger
 KB = 1024
 MTU_DATA_SIZE = 1480
 REDUNDANCY_SIZE = 8
+MAX_UDP_PAYLOAD = 65507
 
 
 def wait_ack(sock: socket.socket, timeout: float = 3.0) -> array.array[int]:
@@ -98,7 +99,7 @@ class RUDP(Protocol):
         pass
 
     def send_file(self, filename: str, host: str, port: int = 9999, buffer_size: int = MTU_DATA_SIZE,
-                  interval: float = 0.0):
+                  interval: float = 0.0005):
         # 클라이언트 소켓 생성
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         server_address = (host, port)
@@ -177,7 +178,15 @@ class RUDP(Protocol):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         server_socket.bind((host, port))
 
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFFER_SIZE)
+        # Try to give the socket a reasonably large OS receive buffer (4MB).
+        # Note: OS may clamp this to allowed limits.
+        try:
+            desired_rcvbuf = 4 * 1024 * 1024
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, desired_rcvbuf)
+            actual_rcv = server_socket.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
+            logger.info(f"SO_RCVBUF set to {actual_rcv}")
+        except OSError as e:
+            logger.info(f"Failed to set SO_RCVBUF: {e}")
 
         logger.info(f"서버가 {host}:{port}에서 시작되었습니다...")
         logger.info(f"파일을 받을 디렉터리: {target_dir}")
@@ -189,7 +198,9 @@ class RUDP(Protocol):
                 # 파일 정보는 항상 고정된 크기로 받기
                 logger.info("파일 정보 대기 중...")
                 try:
-                    data, client_address = server_socket.recvfrom(512)  # 초기 정보는 작은 크기로 받음
+                    # Use a large receive buffer for the initial metadata packet to avoid
+                    # WSAEMSGSIZE (WinError 10040) when a sender uses a large datagram.
+                    data, client_address = server_socket.recvfrom(MAX_UDP_PAYLOAD)
                     logger.info(f"패킷 수신: {len(data)} bytes from {client_address}")
                 except KeyboardInterrupt:
                     raise
@@ -226,7 +237,11 @@ class RUDP(Protocol):
                         last_signal_time = time.time()
 
                         server_socket.settimeout(timeout)
-                        data, _ = server_socket.recvfrom(buffer_size)
+                        # Ensure the recv buffer used here is at least the maximum UDP payload
+                        # or the negotiated buffer_size. This prevents recvfrom from failing
+                        # when the incoming datagram is larger than the provided buffer.
+                        recv_buf = max(buffer_size, MAX_UDP_PAYLOAD)
+                        data, _ = server_socket.recvfrom(recv_buf)
 
                         seq_num, chunk_size = struct.unpack('!II', data[:REDUNDANCY_SIZE])
                         chunk_data = data[REDUNDANCY_SIZE:REDUNDANCY_SIZE + chunk_size]
