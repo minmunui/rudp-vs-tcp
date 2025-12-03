@@ -179,100 +179,122 @@ class RUDP(Protocol):
         logger.info(f"서버가 {host}:{port}에서 시작되었습니다...")
         logger.info(f"파일을 받을 디렉터리: {target_dir}")
 
-        while True:
-            # flush_receive_buffer(server_socket)
-
-            # 파일 정보는 항상 고정된 크기로 받기
-            try:
-                data, client_address = server_socket.recvfrom(512)  # 초기 정보는 작은 크기로 받음
-            except:
+        try:
+            while True:
                 # flush_receive_buffer(server_socket)
-                continue
-            buffer_size, total_chunks, filename = struct.unpack('!II256s', data[:264])
-            try:
-                filename = filename.decode().strip('\x00')
-            except UnicodeDecodeError:
-                logger.info(f"잘못된 패킷 감지됨")
-                continue
-            logger.info(f"파일 {filename}을(를) 받기 시작합니다... (총 {total_chunks}개 청크) (버퍼사이즈 {buffer_size})")
 
-            # 이후 데이터 수신할 때는 지정된 버퍼 크기 사용
-            chunks = {}
-            start_time = time.time()
-            timeout = 5
-
-            last_seq_num = total_chunks - 1
-
-            is_error = False
-
-            while len(chunks) < total_chunks:
+                # 파일 정보는 항상 고정된 크기로 받기
                 try:
-                    # 실제 데이터 수신 시에는 buffer_size 사용
-                    last_signal_time = time.time()
+                    data, client_address = server_socket.recvfrom(512)  # 초기 정보는 작은 크기로 받음
+                except KeyboardInterrupt:
+                    raise
+                except OSError as e:
+                    logger.info(f"Socket error while waiting for file info: {e}")
+                    continue
 
-                    server_socket.settimeout(timeout)
-                    data, _ = server_socket.recvfrom(buffer_size)
+                try:
+                    buffer_size, total_chunks, filename = struct.unpack('!II256s', data[:264])
+                except struct.error:
+                    logger.info(f"잘못된 초기 패킷 수신(길이 부족) - 무시합니다")
+                    continue
 
-                    seq_num, chunk_size = struct.unpack('!II', data[:REDUNDANCY_SIZE])
-                    chunk_data = data[REDUNDANCY_SIZE:REDUNDANCY_SIZE + chunk_size]
+                try:
+                    filename = filename.decode().strip('\x00')
+                except UnicodeDecodeError:
+                    logger.info(f"잘못된 패킷 감지됨")
+                    continue
 
-                    chunks[seq_num] = chunk_data
+                logger.info(f"파일 {filename}을(를) 받기 시작합니다... (총 {total_chunks}개 청크) (버퍼사이즈 {buffer_size})")
 
-                    # 진행률 출력
-                    progress = (len(chunks) / total_chunks) * 100
-                    print(f"\r수신 진행률: {progress:.1f}% seq_num: {seq_num} / {last_seq_num}", end="")
+                # 이후 데이터 수신할 때는 지정된 버퍼 크기 사용
+                chunks = {}
+                start_time = time.time()
+                timeout = 5
 
-                    # 마지막 청크인지 체크
-                    if seq_num == last_seq_num:
+                last_seq_num = total_chunks - 1
 
-                        received_seqs = set(chunks.keys())
-                        all_seqs = set(range(total_chunks))
-                        missed_seqs = list(all_seqs - received_seqs)
-                        logger.info(f"마지막 청크 도달 seq_num = {seq_num}")
+                is_error = False
 
-                        logger.info(f"분실된 패킷 : {missed_seqs}")
-                        if len(missed_seqs) > 0:
-                            last_seq_num = max(missed_seqs)
-                            logger.info(f"새로운 last_seq = {last_seq_num}")
+                while len(chunks) < total_chunks:
+                    try:
+                        # 실제 데이터 수신 시에는 buffer_size 사용
+                        last_signal_time = time.time()
 
-                        send_ack(missed_seqs, server_socket, client_address)
+                        server_socket.settimeout(timeout)
+                        data, _ = server_socket.recvfrom(buffer_size)
 
-                except (struct.error, IndexError) as e:
-                    logger.info(f"\n패킷 손상: {e}")
-                    is_error = True
-                    break
-                except socket.timeout:
-                    logger.info(f"데이터 타임아웃")
-                    is_error = True
-                    break
+                        seq_num, chunk_size = struct.unpack('!II', data[:REDUNDANCY_SIZE])
+                        chunk_data = data[REDUNDANCY_SIZE:REDUNDANCY_SIZE + chunk_size]
 
-            if not is_error:
-                transfer_end_time = time.time()
-                transfer_elapsed_time = transfer_end_time - start_time
-                logger.info(f"transfer_elapsed_time\t{transfer_elapsed_time}")
+                        chunks[seq_num] = chunk_data
 
-                logger.info("\n모든 청크 수신 완료. 파일 재조합 시작...")
+                        # 진행률 출력
+                        progress = (len(chunks) / total_chunks) * 100
+                        print(f"\r수신 진행률: {progress:.1f}% seq_num: {seq_num} / {last_seq_num}", end="")
 
-                file_path = f"{target_dir}/{filename}"
+                        # 마지막 청크인지 체크
+                        if seq_num == last_seq_num:
 
-                Path(target_dir).mkdir(parents=True, exist_ok=True)
+                            received_seqs = set(chunks.keys())
+                            all_seqs = set(range(total_chunks))
+                            missed_seqs = list(all_seqs - received_seqs)
+                            logger.info(f"마지막 청크 도달 seq_num = {seq_num}")
 
-                make_new_filename(file_path)
+                            logger.info(f"분실된 패킷 : {missed_seqs}")
+                            if len(missed_seqs) > 0:
+                                last_seq_num = max(missed_seqs)
+                                logger.info(f"새로운 last_seq = {last_seq_num}")
 
-                # 파일 재조합
-                with open(file_path, 'wb') as f:
-                    for i in range(total_chunks):
-                        # logger.info()(f"{i}번째 청크 조합중\n{chunks[i]}", end='')
-                        if i in chunks:
-                            f.write(chunks[i])
-                        else:
-                            logger.info(f"경고: 청크 {i} 유실")
+                            send_ack(missed_seqs, server_socket, client_address)
 
-                total_end_time = time.time()
-                total_elapsed_time = total_end_time - start_time
-                file_size = os.path.getsize(file_path)
-                logger.info(f"순수 전송 속도 \t{file_size / transfer_elapsed_time / 1024 / 1024}MB/s")
-                logger.debug(f"{file_size / transfer_elapsed_time / 1024 / 1024}")
-                logger.info(f"전체 속도 \t{file_size / total_elapsed_time / 1024 / 1024}MB/s")
-                logger.info(f"파일 {filename} 수신 완료!")
-                logger.info(f"저장 경로 {file_path}")
+                    except (struct.error, IndexError) as e:
+                        logger.info(f"\n패킷 손상: {e}")
+                        is_error = True
+                        break
+                    except socket.timeout:
+                        logger.info(f"데이터 타임아웃")
+                        is_error = True
+                        break
+                    except KeyboardInterrupt:
+                        logger.info("서버가 KeyboardInterrupt로 종료됩니다")
+                        server_socket.close()
+                        return
+
+                if not is_error:
+                    transfer_end_time = time.time()
+                    transfer_elapsed_time = transfer_end_time - start_time
+                    logger.info(f"transfer_elapsed_time\t{transfer_elapsed_time}")
+
+                    logger.info("\n모든 청크 수신 완료. 파일 재조합 시작...")
+
+                    file_path = f"{target_dir}/{filename}"
+
+                    Path(target_dir).mkdir(parents=True, exist_ok=True)
+
+                    make_new_filename(file_path)
+
+                    # 파일 재조합
+                    with open(file_path, 'wb') as f:
+                        for i in range(total_chunks):
+                            # logger.info()(f"{i}번째 청크 조합중\n{chunks[i]}", end='')
+                            if i in chunks:
+                                f.write(chunks[i])
+                            else:
+                                logger.info(f"경고: 청크 {i} 유실")
+
+                    total_end_time = time.time()
+                    total_elapsed_time = total_end_time - start_time
+                    file_size = os.path.getsize(file_path)
+                    logger.info(f"순수 전송 속도 \t{file_size / transfer_elapsed_time / 1024 / 1024}MB/s")
+                    logger.debug(f"{file_size / transfer_elapsed_time / 1024 / 1024}")
+                    logger.info(f"전체 속도 \t{file_size / total_elapsed_time / 1024 / 1024}MB/s")
+                    logger.info(f"파일 {filename} 수신 완료!")
+                    logger.info(f"저장 경로 {file_path}")
+        except KeyboardInterrupt:
+            logger.info("서버가 KeyboardInterrupt로 종료됩니다")
+        finally:
+            try:
+                server_socket.close()
+            except Exception:
+                pass
+            logger.info("서버 소켓 닫음")
