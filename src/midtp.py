@@ -32,7 +32,7 @@ class MIDTP(Protocol):
         filename: str,
         host: str,
         port: int = 9997,
-        buffer_size: int = 1472,
+        buffer_size: int = 1024 * 1024 * 64,
         interval: float = 0.0,
         segment_size: int = None,
     ):

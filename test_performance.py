@@ -162,8 +162,8 @@ class PerformanceTest:
                     print(f"   에러: {result['error']}")
 
             # 다음 테스트 전 대기
-            if i < self.iterations - 1:
-                time.sleep(2)
+            # if i < self.iterations - 1:
+            time.sleep(2)
 
         # 통계 계산
         success_count = len(speeds)
@@ -396,7 +396,7 @@ def start_server(protocol: str, port: Optional[int] = None, save_logs: bool = Tr
     print(f"{'='*60}\n")
 
     cmd = [
-        "python3",
+        "python",
         "src/main.py",
         "--protocol",
         protocol,

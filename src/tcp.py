@@ -99,7 +99,7 @@ class TCP(Protocol):
         self,
         host: str,
         port: int,
-        target_dir: str = "received",
+        target_dir: str = "received_tcp",
         log_filename: str = None,
     ):
         """
