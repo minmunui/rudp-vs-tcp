@@ -33,7 +33,7 @@ def wait_ack(sock: socket.socket, timeout: float = 3.0) -> array.array[int]:
     try:
         packed_data, addr = sock.recvfrom(KB * 32)
         # ACK는 정수의 배열
-        result_array = array.array('i')
+        result_array = array.array("i")
         result_array.frombytes(packed_data)
         logger.info(f"ACK전달받음 : {result_array}")
     except socket.timeout:
@@ -44,7 +44,7 @@ def wait_ack(sock: socket.socket, timeout: float = 3.0) -> array.array[int]:
 
 
 def send_ack(missed_seqs: list[int], sock: socket.socket, target_address: tuple):
-    arr = array.array('i', missed_seqs)
+    arr = array.array("i", missed_seqs)
     packed = arr.tobytes()
     logger.info(f"전송할 패킷정보 크기 {len(packed)}")
     logger.info(f"손실된 옹량 {len(packed) / 4 * MTU_DATA_SIZE}")
@@ -54,17 +54,24 @@ def send_ack(missed_seqs: list[int], sock: socket.socket, target_address: tuple)
         logger.info(f"너무 많은 loss")
 
 
-def resend_dropped_data(sock: socket.socket, dropped_seq_numbers: list[int] | array.array[int], packet_dict: dict,
-                        server_addr: tuple[str, int]):
-    """
-
-    """
+def resend_dropped_data(
+    sock: socket.socket,
+    dropped_seq_numbers: list[int] | array.array[int],
+    packet_dict: dict,
+    server_addr: tuple[str, int],
+):
+    """ """
     for seq_number in dropped_seq_numbers:
         sock.sendto(packet_dict[seq_number], server_addr)
 
 
-def process_ack(sock: socket.socket, client_address: tuple, packet_dict: dict, last_seq_number: int,
-                timeout: float = 0.5) -> array.array:
+def process_ack(
+    sock: socket.socket,
+    client_address: tuple,
+    packet_dict: dict,
+    last_seq_number: int,
+    timeout: float = 0.5,
+) -> array.array:
     """
     ack를 받아 처리하고, ack가 오지 않을 경우 마지막 chucnk를 재전송합니다. ack를 받을 경우 ack를 반환합니다.
 
@@ -86,7 +93,9 @@ def process_ack(sock: socket.socket, client_address: tuple, packet_dict: dict, l
             if retry_count > 5:
                 logger.info(f"재전송 초과됨 횟수 초과됨")
                 raise socket.timeout
-            logger.info(f"ACK 재전송 seq_number {last_seq_number} | 재전송 : {retry_count}")
+            logger.info(
+                f"ACK 재전송 seq_number {last_seq_number} | 재전송 : {retry_count}"
+            )
             sock.sendto(packet_dict[last_seq_number], client_address)
 
 
@@ -97,11 +106,22 @@ class RUDP(Protocol):
     def __init__(self):
         pass
 
-    def send_file(self, filename: str, host: str, port: int = 9999, buffer_size: int = MTU_DATA_SIZE,
-                  interval: float = 0.0):
+    def send_file(
+        self,
+        filename: str,
+        host: str,
+        port: int = 9999,
+        buffer_size: int = MTU_DATA_SIZE,
+        interval: float = 0.0005,
+    ):
         # 클라이언트 소켓 생성
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         server_address = (host, port)
+
+        # 송신 버퍼 크기를 buffer_size에 맞게 설정 (최소 64KB)
+        send_buffer_size = max(buffer_size * 2, 64 * 1024)
+        client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, send_buffer_size)
+
         logger.info(f"파일 {filename}을(를) 전송합니다...")
         logger.info(f"서버 주소: {host}:{port}")
         logger.info(f"버퍼 크기: {buffer_size}")
@@ -122,22 +142,28 @@ class RUDP(Protocol):
             logger.info(f"청크 수: {total_chunks}")
 
             # 파일 정보 전송 (파일명 + 총 청크 수)
-            file_info = struct.pack('!II256s', buffer_size, total_chunks, filename.encode()[:256])
-            logger.info(f"파일 정보 전송: buffer_size={buffer_size}, total_chunks={total_chunks}, 크기={len(file_info)} bytes")
+            file_info = struct.pack(
+                "!II256s", buffer_size, total_chunks, filename.encode()[:256]
+            )
+            logger.info(
+                f"파일 정보 전송: buffer_size={buffer_size}, total_chunks={total_chunks}, 크기={len(file_info)} bytes"
+            )
             sent_bytes = client_socket.sendto(file_info[:512], server_address)
-            logger.info(f"파일 정보 전송 완료: {sent_bytes} bytes sent to {server_address}")
+            logger.info(
+                f"파일 정보 전송 완료: {sent_bytes} bytes sent to {server_address}"
+            )
 
             # 청크를 보관하기 위한 dictionary
             packet_dict = {}
             # 파일 전송 시작
 
             start_time = time.time()
-            with open(filename, 'rb') as f:
+            with open(filename, "rb") as f:
                 for seq_num in range(total_chunks):
                     chunk_data = f.read(chunk_size)
 
                     # SEQ 번호와 청크 크기를 포함하여 패킷 구성
-                    packet = struct.pack('!II', seq_num, chunk_size) + chunk_data
+                    packet = struct.pack("!II", seq_num, chunk_size) + chunk_data
                     packet_dict[seq_num] = packet
                     client_socket.sendto(packet, server_address)
 
@@ -145,16 +171,21 @@ class RUDP(Protocol):
 
                     # 진행률 출력
                     progress = ((seq_num + 1) / total_chunks) * 100
-                    print(f"\r전송 진행률: {progress:.1f}% 전송한 패킷 {seq_num:d}", end='')
+                    print(
+                        f"\r전송 진행률: {progress:.1f}% 전송한 패킷 {seq_num:d}",
+                        end="",
+                    )
 
             logger.info(f"\n파일 {filename} 전송")
-            logger.info(f"소요시간 {time.time() - start_time}")
+
             transfer_complete = False
 
             last_seq_number = len(packet_dict) - 1
             while not transfer_complete:
                 try:
-                    dropped_seq_numbers = process_ack(client_socket, server_address, packet_dict, last_seq_number)
+                    dropped_seq_numbers = process_ack(
+                        client_socket, server_address, packet_dict, last_seq_number
+                    )
                     losses.append(dropped_seq_numbers)
                 except socket.timeout:
                     losses.append([-1])
@@ -164,12 +195,34 @@ class RUDP(Protocol):
                     transfer_complete = True
                 else:
                     last_seq_number = max(dropped_seq_numbers)
-                    logger.info(f"소실패킷 재전송 dropped_seq_numbers: {dropped_seq_numbers}")
-                    resend_dropped_data(client_socket, dropped_seq_numbers, packet_dict, server_address)
+                    logger.info(
+                        f"소실패킷 재전송 dropped_seq_numbers: {dropped_seq_numbers}"
+                    )
+                    resend_dropped_data(
+                        client_socket, dropped_seq_numbers, packet_dict, server_address
+                    )
+            # 전송 소요시간 및 속도 출력
+            transfer_elapsed = time.time() - start_time
+            # file_size는 함수 초반에 계산되어 있음(바이트 단위)
+            try:
+                file_size_bytes = file_size
+            except NameError:
+                # 안전장치: file_size가 없으면 전송한 패킷 크기로 추정
+                file_size_bytes = sum(
+                    len(p) - REDUNDANCY_SIZE for p in packet_dict.values()
+                )
 
+            if transfer_elapsed <= 0:
+                logger.info("전송 소요시간이 너무 짧아 속도를 계산할 수 없습니다")
+            else:
+                mb_s = file_size_bytes / transfer_elapsed / 1024 / 1024
+                logger.info(
+                    f"전송 소요시간: {transfer_elapsed:.3f}s, 파일 크기: {file_size_bytes} bytes ({file_size_bytes / 1024 / 1024:.3f} MB), 전송 속도: {mb_s:.3f} MB/s"
+                )
+            logger.info(f"소요시간 {time.time() - start_time}")
         finally:
             client_socket.close()
-        
+
         return losses
 
     def start_server(self, host: str, port: int, target_dir: str = "received"):
@@ -189,7 +242,9 @@ class RUDP(Protocol):
                 # 파일 정보는 항상 고정된 크기로 받기
                 logger.info("파일 정보 대기 중...")
                 try:
-                    data, client_address = server_socket.recvfrom(512)  # 초기 정보는 작은 크기로 받음
+                    data, client_address = server_socket.recvfrom(
+                        512
+                    )  # 초기 정보는 작은 크기로 받음
                     logger.info(f"패킷 수신: {len(data)} bytes from {client_address}")
                 except KeyboardInterrupt:
                     raise
@@ -198,18 +253,22 @@ class RUDP(Protocol):
                     continue
 
                 try:
-                    buffer_size, total_chunks, filename = struct.unpack('!II256s', data[:264])
+                    buffer_size, total_chunks, filename = struct.unpack(
+                        "!II256s", data[:264]
+                    )
                 except struct.error:
                     logger.info(f"잘못된 초기 패킷 수신(길이 부족) - 무시합니다")
                     continue
 
                 try:
-                    filename = filename.decode().strip('\x00')
+                    filename = filename.decode().strip("\x00")
                 except UnicodeDecodeError:
                     logger.info(f"잘못된 패킷 감지됨")
                     continue
 
-                logger.info(f"파일 {filename}을(를) 받기 시작합니다... (총 {total_chunks}개 청크) (버퍼사이즈 {buffer_size})")
+                logger.info(
+                    f"파일 {filename}을(를) 받기 시작합니다... (총 {total_chunks}개 청크) (버퍼사이즈 {buffer_size})"
+                )
 
                 # 이후 데이터 수신할 때는 지정된 버퍼 크기 사용
                 chunks = {}
@@ -228,14 +287,21 @@ class RUDP(Protocol):
                         server_socket.settimeout(timeout)
                         data, _ = server_socket.recvfrom(buffer_size)
 
-                        seq_num, chunk_size = struct.unpack('!II', data[:REDUNDANCY_SIZE])
-                        chunk_data = data[REDUNDANCY_SIZE:REDUNDANCY_SIZE + chunk_size]
+                        seq_num, chunk_size = struct.unpack(
+                            "!II", data[:REDUNDANCY_SIZE]
+                        )
+                        chunk_data = data[
+                            REDUNDANCY_SIZE : REDUNDANCY_SIZE + chunk_size
+                        ]
 
                         chunks[seq_num] = chunk_data
 
                         # 진행률 출력
                         progress = (len(chunks) / total_chunks) * 100
-                        print(f"\r수신 진행률: {progress:.1f}% seq_num: {seq_num} / {last_seq_num}", end="")
+                        print(
+                            f"\r수신 진행률: {progress:.1f}% seq_num: {seq_num} / {last_seq_num}",
+                            end="",
+                        )
 
                         # 마지막 청크인지 체크
                         if seq_num == last_seq_num:
@@ -278,7 +344,7 @@ class RUDP(Protocol):
                     make_new_filename(file_path)
 
                     # 파일 재조합
-                    with open(file_path, 'wb') as f:
+                    with open(file_path, "wb") as f:
                         for i in range(total_chunks):
                             # logger.info()(f"{i}번째 청크 조합중\n{chunks[i]}", end='')
                             if i in chunks:
@@ -289,9 +355,13 @@ class RUDP(Protocol):
                     total_end_time = time.time()
                     total_elapsed_time = total_end_time - start_time
                     file_size = os.path.getsize(file_path)
-                    logger.info(f"순수 전송 속도 \t{file_size / transfer_elapsed_time / 1024 / 1024}MB/s")
+                    logger.info(
+                        f"순수 전송 속도 \t{file_size / transfer_elapsed_time / 1024 / 1024}MB/s"
+                    )
                     logger.debug(f"{file_size / transfer_elapsed_time / 1024 / 1024}")
-                    logger.info(f"전체 속도 \t{file_size / total_elapsed_time / 1024 / 1024}MB/s")
+                    logger.info(
+                        f"전체 속도 \t{file_size / total_elapsed_time / 1024 / 1024}MB/s"
+                    )
                     logger.info(f"파일 {filename} 수신 완료!")
                     logger.info(f"저장 경로 {file_path}")
         except KeyboardInterrupt:
