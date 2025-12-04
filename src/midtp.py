@@ -168,11 +168,11 @@ class MIDTP(Protocol):
             logger.info(f"파일 크기: {file_size} bytes, 청크 수: {total_chunks}")
             
             # Prepare metadata packet (seq_num = 0)
+            # total_chunks is NOT included - receiver learns it from first round's last_seq
             metadata = {
                 'filename': os.path.basename(filename),
                 'buffer_size': buffer_size,
-                'file_size': file_size,
-                'total_chunks': total_chunks
+                'file_size': file_size
             }
             metadata_json = json.dumps(metadata).encode('utf-8')
             metadata_packet = create_packet(METADATA_SEQ, total_chunks, metadata_json)
@@ -295,7 +295,8 @@ class MIDTP(Protocol):
                 # Receive packets until we have all chunks
                 packets = {}  # seq_num -> payload
                 metadata = None
-                last_seq = None
+                last_seq = None  # Current round's last seq
+                total_chunks = None  # Total data chunks (learned from first round)
                 client_address = None
                 start_time = time.time()
                 timeout = 5.0
@@ -315,10 +316,13 @@ class MIDTP(Protocol):
                         try:
                             seq_num, pkt_last_seq, chunk_size, payload = parse_packet(data)
                             
-                            # Update last_seq from any packet
-                            if last_seq is None:
-                                last_seq = pkt_last_seq
-                                logger.info(f"총 청크 수 확인: {last_seq}")
+                            # Save total_chunks from first round's last_seq
+                            if total_chunks is None:
+                                total_chunks = pkt_last_seq
+                                logger.info(f"총 청크 수 확인: {total_chunks} (첫 번째 라운드)")
+                            
+                            # Update current round's last_seq
+                            last_seq = pkt_last_seq
                             
                             # Handle metadata packet
                             if seq_num == METADATA_SEQ:
@@ -333,14 +337,15 @@ class MIDTP(Protocol):
                                 
                                 # Progress
                                 data_chunks_received = len([s for s in packets.keys() if s > 0])
-                                if last_seq:
-                                    progress = (data_chunks_received / last_seq) * 100
+                                if total_chunks:
+                                    progress = (data_chunks_received / total_chunks) * 100
                                     print(f"\r수신 진행률: {progress:.1f}% "
-                                          f"({data_chunks_received}/{last_seq})", end="")
+                                          f"({data_chunks_received}/{total_chunks})", end="")
                             
-                            # Check if transfer complete
-                            if last_seq is not None:
-                                expected_seqs = set([METADATA_SEQ] + list(range(1, last_seq + 1)))
+                            # Check if transfer complete and send ACK
+                            if total_chunks is not None and last_seq is not None:
+                                # Expected seqs based on total_chunks (never changes)
+                                expected_seqs = set([METADATA_SEQ] + list(range(1, total_chunks + 1)))
                                 received_seqs = set(packets.keys())
                                 
                                 if expected_seqs == received_seqs:
@@ -348,10 +353,10 @@ class MIDTP(Protocol):
                                     logger.info("모든 패킷 수신 완료")
                                     receiving = False
                                 
-                                # Check if we should send ACK (received last data chunk)
-                                elif seq_num == last_seq or (last_seq > 0 and seq_num >= last_seq):
+                                # Check if current round ended (received packet with seq_num == last_seq)
+                                elif seq_num == last_seq:
                                     missed_seqs = sorted(list(expected_seqs - received_seqs))
-                                    logger.info(f"ACK 전송 준비: 누락 {len(missed_seqs)}개")
+                                    logger.info(f"라운드 종료 (last_seq={last_seq}) - ACK 전송: 누락 {len(missed_seqs)}개")
                                     send_ack(missed_seqs, server_socket, client_address)
                         
                         except (struct.error, json.JSONDecodeError, KeyError) as e:
@@ -362,8 +367,8 @@ class MIDTP(Protocol):
                         logger.info("수신 타임아웃")
                         
                         # Send final ACK if we have some packets
-                        if last_seq is not None and client_address is not None:
-                            expected_seqs = set([METADATA_SEQ] + list(range(1, last_seq + 1)))
+                        if total_chunks is not None and client_address is not None:
+                            expected_seqs = set([METADATA_SEQ] + list(range(1, total_chunks + 1)))
                             received_seqs = set(packets.keys())
                             missed_seqs = sorted(list(expected_seqs - received_seqs))
                             
@@ -379,7 +384,7 @@ class MIDTP(Protocol):
                         raise
                 
                 # Reconstruct file
-                if last_seq is not None and len(packets) > 0:
+                if total_chunks is not None and len(packets) > 0:
                     transfer_time = time.time() - start_time
                     
                     # Determine filename
@@ -400,7 +405,7 @@ class MIDTP(Protocol):
                     # Write file
                     logger.info(f"파일 재조합 중: {file_path}")
                     with open(file_path, 'wb') as f:
-                        for i in range(last_seq):
+                        for i in range(total_chunks):
                             seq_num = i + 1  # Data chunks are 1-based
                             if seq_num in packets:
                                 f.write(packets[seq_num])
