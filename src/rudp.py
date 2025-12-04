@@ -214,16 +214,23 @@ class RUDP(Protocol):
 
             if transfer_elapsed <= 0:
                 logger.info("전송 소요시간이 너무 짧아 속도를 계산할 수 없습니다")
+                speed_mbps = 0
             else:
-                mb_s = file_size_bytes / transfer_elapsed / 1024 / 1024
+                speed_mbps = file_size_bytes / transfer_elapsed / 1024 / 1024
                 logger.info(
-                    f"전송 소요시간: {transfer_elapsed:.3f}s, 파일 크기: {file_size_bytes} bytes ({file_size_bytes / 1024 / 1024:.3f} MB), 전송 속도: {mb_s:.3f} MB/s"
+                    f"전송 소요시간: {transfer_elapsed:.3f}s, 파일 크기: {file_size_bytes} bytes ({file_size_bytes / 1024 / 1024:.3f} MB), 전송 속도: {speed_mbps:.3f} MB/s"
                 )
             logger.info(f"소요시간 {time.time() - start_time}")
         finally:
             client_socket.close()
 
-        return losses
+        return {
+            "success": True,
+            "transfer_time": transfer_elapsed,
+            "speed_mbps": speed_mbps,
+            "filesize": file_size_bytes,
+            "losses": losses
+        }
 
     def start_server(self, host: str, port: int, target_dir: str = "received"):
         # 서버 소켓 생성

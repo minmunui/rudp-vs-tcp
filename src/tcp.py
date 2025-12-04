@@ -24,7 +24,7 @@ class TCP(Protocol):
             interval (float): 전송 간격입니다.
 
         Returns:
-            bool: 전송 성공 여부를 반환합니다.
+            dict: 전송 결과 정보 (success, transfer_time, speed_mbps, filesize)
         """
         logger.info(f"TCP로 전송 시작 - 파일: {filename}")
 
@@ -46,6 +46,9 @@ class TCP(Protocol):
             sock.sendall(header)
             sock.sendall(file_info_json)
 
+            # 전송 시작 시간 측정
+            start_time = time.time()
+            
             # 파일 데이터 전송
             bytes_sent = 0
             with open(filename, 'rb') as file:
@@ -64,13 +67,28 @@ class TCP(Protocol):
             # 서버로부터 수신 확인 메시지 받기
             response = sock.recv(1024).decode('utf-8')
             logger.info(f"서버 응답: {response}")
+            
+            # 전송 시간 및 속도 계산
+            transfer_time = time.time() - start_time
+            speed_mbps = filesize / transfer_time / 1024 / 1024 if transfer_time > 0 else 0
 
             sock.close()
-            return True
+            return {
+                "success": True,
+                "transfer_time": transfer_time,
+                "speed_mbps": speed_mbps,
+                "filesize": filesize
+            }
 
         except Exception as e:
             logger.error(f"파일 전송 중 오류 발생: {e}")
-            return False
+            return {
+                "success": False,
+                "transfer_time": 0,
+                "speed_mbps": 0,
+                "filesize": 0,
+                "error": str(e)
+            }
 
     def start_server(self, host: str, port: int, target_dir: str = "received"):
         """
