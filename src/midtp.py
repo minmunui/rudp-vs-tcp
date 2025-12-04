@@ -227,11 +227,26 @@ class MIDTP(Protocol):
                         transfer_complete = True
                     else:
                         logger.info(f"누락 패킷 {len(missed_seqs)}개 재전송 중...")
+                        
+                        # Find the maximum seq_num in this retransmission round
+                        max_retrans_seq = max(missed_seqs)
+                        
+                        # Rebuild packets with updated last_seq for this retransmission round
                         for seq_num in missed_seqs:
-                            if seq_num in packet_dict:
-                                client_socket.sendto(packet_dict[seq_num], server_address)
-                                time.sleep(interval)
-                        logger.info("재전송 완료")
+                            if seq_num == METADATA_SEQ:
+                                # Rebuild metadata packet with new last_seq
+                                metadata_json = json.dumps(metadata).encode('utf-8')
+                                retrans_packet = create_packet(METADATA_SEQ, max_retrans_seq, metadata_json)
+                            else:
+                                # Rebuild data packet with new last_seq
+                                original_packet = packet_dict[seq_num]
+                                _, _, _, original_payload = parse_packet(original_packet)
+                                retrans_packet = create_packet(seq_num, max_retrans_seq, original_payload)
+                            
+                            client_socket.sendto(retrans_packet, server_address)
+                            time.sleep(interval)
+                        
+                        logger.info(f"재전송 완료 (last_seq={max_retrans_seq})")
                         
                 except socket.timeout:
                     retry_count += 1
