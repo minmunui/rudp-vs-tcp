@@ -86,7 +86,7 @@ class FileTransferClientProtocol(QuicConnectionProtocol):
         logger.info(f"파일 데이터 전송 완료, 서버 응답 대기 중...")
 
         self.file_sent.set()
-        
+
         # 서버로부터 ACK 대기 (타임아웃 10초)
         try:
             await asyncio.wait_for(self.server_ack.wait(), timeout=10.0)
@@ -165,7 +165,7 @@ class FileTransferServerProtocol(QuicConnectionProtocol):
             logger.info(f"크기: {actual_size} bytes, 시간: {transfer_time:.2f}초")
             logger.info(f"전송 속도: {transfer_speed:.2f} MB/s")
             logger.debug(f"{transfer_speed}")
-            
+
             # 클라이언트에게 ACK 전송
             try:
                 ack_stream_id = self._quic.get_next_available_stream_id()
@@ -174,11 +174,11 @@ class FileTransferServerProtocol(QuicConnectionProtocol):
                 logger.info("클라이언트에게 ACK 전송")
             except Exception as e:
                 logger.error(f"ACK 전송 오류: {e}")
-            
+
             # Cleanup
             del self.stream_data[stream_id]
             del self.transfer_start[stream_id]
-            
+
         except Exception as e:
             logger.error(f"파일 처리 중 오류: {e}")
 
